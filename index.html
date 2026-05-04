@@ -417,6 +417,7 @@ function splitColumnsRespectingQuotes(row) {
 // 8:Weight 9:Sea(cubic) 10:Actual.W 11:VolWeight 12:ChargeableVolWt
 // 13:ValueOfGoods 14:ValueReported 15:ChargeableTax
 // 16:ParcelNo 17:Tracking 18:Revenue 19:Cost 20:Profit ...
+// 25:InsuranceY/N 26:Insurance ($, 10% of col 13)
 function parseSingleRow(text) {
   // Use quote-aware column splitting so multi-line parcel cells stay intact
   const cols = splitColumnsRespectingQuotes(text);
@@ -463,6 +464,8 @@ function parseSingleRow(text) {
     parcelNo: G(16),
     trackingNo: G(17),
     revenue: G(18).replace(/[$,\s]/g, ""),
+    insuranceOptIn: G(25),
+    insuranceAmount: G(26).replace(/[$,\s]/g, ""),
   };
 }
 
@@ -1076,7 +1079,27 @@ function NewInvoiceTab({ onPreview, invoices, showToast }) {
       });
     }
 
-    const subtotal = grossShipping + tax;
+    // Insurance line — only when the customer opted in (col Z = "Y") AND the
+    // sheet recorded an amount (col AA > 0). Col S already includes insurance,
+    // so we add it to subtotal too to keep the discount-bridge math correct.
+    const insuranceAmt = num(r.insuranceAmount);
+    const insuranceOptedIn =
+      (r.insuranceOptIn || "").trim().toUpperCase() === "Y";
+    if (insuranceOptedIn && insuranceAmt > 0) {
+      const vog = num(r.valueOfGoods);
+      const vogFmt = vog.toLocaleString("en-SG", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      items.push({
+        desc: `Insurance (10% of declared value S$${vogFmt})`,
+        meta: "",
+        amount: insuranceAmt,
+      });
+    }
+
+    const subtotal =
+      grossShipping + tax + (insuranceOptedIn ? insuranceAmt : 0);
     const discAmt = subtotal - revenue > 0 ? subtotal - revenue : 0;
 
     return {
